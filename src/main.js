@@ -8,6 +8,13 @@ const route = require('koa-route')
 const serve = require('koa-static')
 const mount = require('koa-mount')
 const websockify = require('koa-websocket')
+const { MongoClient } = require('mongodb')
+
+const uri = 'mongodb+srv://myshaitan:sJL2BLM8K7H8H7w@cluster0.pc53wka.mongodb.net/?retryWrites=true&w=majority'
+const mongoClient = new MongoClient(uri, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
 
 const app = websockify(new Koa())
 // @ts-ignore
@@ -25,15 +32,46 @@ app.use(async (ctx) => {
     await ctx.render('main')
 })
 
+const _client = mongoClient.connect()
+
+async function getChatsCollection(){
+    const client = await _client
+    return client.db('chat').collection('chats')
+}
+
 app.ws.use(
     route.all('/ws', async (ctx) =>{
+        const chatsCollection = await getChatsCollection()
+        const chatsCursor = chatsCollection.find({},{
+            sort:{
+                createdAt: 1,
+            }
+        })
+
+        const chats = await chatsCursor.toArray()
+        ctx.websocket.send(
+            JSON.stringify({
+                type:'sync',
+                payload:{
+                    chats,
+                }
+            })
+        )
+
         ctx.websocket.on('message', async (data) => {
-            console.log(data.toString("utf-8"))
-            if(typeof data.toString("utf-8") !== 'string'){
+            data = data.toString("utf-8")
+            if(typeof data !== 'string'){
                 return
             }
-            console.log(data.toString("utf-8"))
-            const {message, nickname} = JSON.parse(data.toString("utf-8"))
+            const chat = JSON.parse(data)
+            await chatsCollection.insertOne(
+                {
+                    ...chat,
+                    createdAt: new Date(),
+                }
+                )
+
+            const {message, nickname} = chat
 
             const { server} = app.ws
             if(!server){
@@ -42,11 +80,13 @@ app.ws.use(
 
             server.clients.forEach(client => {
                 client.send(JSON.stringify({
-                    message,
-                    nickname
+                    type:'chat',
+                    payload:{
+                        message,
+                        nickname
+                    }
                 }))
             })
-
         })
     })
 )

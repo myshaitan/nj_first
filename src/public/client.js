@@ -43,20 +43,32 @@
         
         socket.send(JSON.stringify({
             nickname:myNickname,
-            message: decodeURIComponent(inputEl.value)
+            message: inputEl.value
+            // message: decodeURIComponent(inputEl.value)
         }) )
         inputEl.value = ''
     })
 
-    socket.addEventListener('message', (event)=>{
+    function drawChats(){
         chatsEl.innerHTML = ''
-
-
-        chats.push(JSON.parse(event.data))
-        chats.forEach(chat => {
+        chats.forEach(({message, nickname}) => {
             const div  = document.createElement('div')
-            div.innerText = `${chat.nickname}: ${chat.message}`
+            div.innerText = `${nickname}: ${message}`
             chatsEl.appendChild(div)
         })
+    }
+
+    socket.addEventListener('message', (event)=>{
+        const {type, payload} = JSON.parse(event.data)
+
+        if(type === 'sync'){
+            const {chats:syncedChats} = payload
+            chats.push(...syncedChats)
+        }else if(type === 'chat'){
+            const chat = payload
+            chats.push(chat)
+        }
+
+        drawChats()
     })
 })()
